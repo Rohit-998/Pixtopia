@@ -234,7 +234,7 @@ function SpeedLines() {
   );
 
   useEffect(() => {
-    const arr = [];
+    const arr: { id: number; top: number; dur: number; delay: number }[] = [];
     for (let i = 0; i < 15; i++) {
       arr.push({
         id: i,

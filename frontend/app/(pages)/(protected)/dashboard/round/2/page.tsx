@@ -31,7 +31,7 @@ export default function Round2Page() {
       .select("year")
       .eq("id", user.id)
       .single()
-      .then(({ data }) => {
+      .then(({ data }: { data: any }) => {
         const year = data?.year?.trim() ?? "";
         // 1st year → contest URL 1, everyone else → contest URL 2
         const isFirstYear = year === "1" || year.toLowerCase().startsWith("1st");

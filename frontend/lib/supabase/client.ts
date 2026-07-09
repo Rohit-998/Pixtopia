@@ -6,8 +6,8 @@
 export function createClient(): any {
   return {
     auth: {
-      getSession: async () => ({ data: { session: null } }),
-      getUser: async () => ({ data: { user: null } }),
+      getSession: async () => ({ data: { session: { user: { id: "demo-user-pixtopia-2026", email: "demo@pixtopia.dev" } } }, error: null }),
+      getUser: async () => ({ data: { user: { id: "demo-user-pixtopia-2026", email: "demo@pixtopia.dev" } }, error: null }),
       signInWithPassword: async () => ({ error: null }),
       signOut: async () => {},
       onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
