@@ -3,30 +3,24 @@
 import React, { useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useAuth } from "@/lib/authContext";
 
 const SiteNavbar = () => {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, logout } = useAuth();
-
-  const handleLogout = async () => {
-    await logout();
-    router.push("/login");
-  };
 
   // Build contextual links based on current page
   const navLinks = useMemo(() => {
     const onDashboard = pathname?.startsWith("/dashboard");
     const onLeaderboard = pathname?.startsWith("/leaderboard");
+    const onLogin = pathname?.startsWith("/login");
 
     if (onDashboard) {
       return [
         { label: "HOME", href: "/" },
-        { label: "LEADERBOARD", href: "/leaderboard" },
+        { label: "LOGIN", href: "/login" },
       ];
     }
-    if (onLeaderboard) {
+    if (onLeaderboard || onLogin) {
       return [
         { label: "HOME", href: "/" },
         { label: "DASHBOARD", href: "/dashboard" },
@@ -35,7 +29,7 @@ const SiteNavbar = () => {
     // Home page (or any other page)
     return [
       { label: "DASHBOARD", href: "/dashboard" },
-      { label: "LEADERBOARD", href: "/leaderboard" },
+      { label: "LOGIN", href: "/login" },
     ];
   }, [pathname]);
 
@@ -52,23 +46,6 @@ const SiteNavbar = () => {
               {link.label}
             </Link>
           ))}
-
-          {/* Login / Logout */}
-          {user ? (
-            <button
-              onClick={handleLogout}
-              className="text-[13px] font-medium tracking-[0.2em] text-zinc-400 hover:text-white transition-colors duration-300 py-4 cursor-pointer bg-transparent border-none"
-            >
-              LOGOUT
-            </button>
-          ) : (
-            <Link
-              href="/login"
-              className="text-[13px] font-medium tracking-[0.2em] text-zinc-400 hover:text-white transition-colors duration-300 py-4"
-            >
-              LOGIN
-            </Link>
-          )}
         </div>
       </div>
     </nav>
@@ -76,4 +53,3 @@ const SiteNavbar = () => {
 };
 
 export default SiteNavbar;
-

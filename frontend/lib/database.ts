@@ -1,14 +1,7 @@
-import { createClient as createSupabaseClient } from "./supabase/client";
-import type { SupabaseClient, RealtimeChannel } from "@supabase/supabase-js";
-
-// ─── Singleton browser client ─────────────────────────────────────────────────
-// Delegates to createClient() in supabase/client.ts which is already a
-// module-level singleton. Calling createSupabaseClient() here returns the
-// same instance every time, so only one WebSocket connection and one Web
-// Lock is ever held across the whole app.
-function getClient(): SupabaseClient {
-  return createSupabaseClient();
-}
+/**
+ * Local-only database module — no Supabase.
+ * Provides static data for the demo/showcase version.
+ */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -16,7 +9,7 @@ export type RoundStatus = "locked" | "active" | "completed";
 
 export interface RoundState {
   status: RoundStatus;
-  startedAt: string | null; // ISO timestamp string (was Firestore Timestamp)
+  startedAt: string | null;
 }
 
 export interface GameState {
@@ -29,12 +22,12 @@ export interface Question {
   id: string;
   round_id: string;
   order: number;
-  question?: string; // Round 1
-  options?: string[]; // Round 1
-  correct_index: number; // All rounds
-  image_urls?: string[]; // Rounds 3 & 4
-  letters?: string[]; // Round 4
-  answer?: string; // Round 4
+  question?: string;
+  options?: string[];
+  correct_index: number;
+  image_urls?: string[];
+  letters?: string[];
+  answer?: string;
   points: number;
 }
 
@@ -66,279 +59,100 @@ export interface SubmissionData {
   };
 }
 
-// ─── Channel counter — ensures each subscription gets a unique channel name ───
-// Supabase will reject a second .subscribe() on a channel with the same name
-// while the first is still JOINING. Using a counter avoids that race in React
-// Strict Mode (which mounts → unmounts → remounts every effect in dev).
-let _channelSeq = 0;
-function nextChannel(base: string): string {
-  return `${base}_${++_channelSeq}`;
-}
+// ─── Static game state — Round 1 is always active ─────────────────────────────
+
+const DEMO_GAME_STATE: GameState = {
+  id: "current",
+  round_statuses: {
+    "1": { status: "active", startedAt: new Date().toISOString() },
+    "2": { status: "locked", startedAt: null },
+    "3": { status: "locked", startedAt: null },
+    "4": { status: "locked", startedAt: null },
+    "5": { status: "locked", startedAt: null },
+  },
+  hackerrank_url: "",
+};
 
 // ─── Game State ───────────────────────────────────────────────────────────────
 
-/**
- * Fetches the current game state once.
- */
 export async function getGameState(): Promise<GameState | null> {
-  const res = await fetch("/api/game/state");
-  if (!res.ok) return null;
-  return res.json();
+  return DEMO_GAME_STATE;
 }
 
-/**
- * Subscribes to real-time game state changes via Supabase Realtime.
- * Returns an unsubscribe function (mirrors Firestore onSnapshot API).
- */
 export function subscribeToGameState(
   callback: (state: GameState | null) => void,
 ): () => void {
-  const supabase = getClient();
-
-  // Fetch current state immediately
-  getGameState().then(callback);
-
-  const channel: RealtimeChannel = supabase
-    .channel(nextChannel("game_state"))
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "game_state",
-        filter: "id=eq.current",
-      },
-      (payload) => {
-        callback(payload.new as GameState);
-      },
-    )
-    .subscribe();
-
-  return () => {
-    supabase.removeChannel(channel);
-  };
+  // Emit immediately — no real-time subscription needed
+  callback(DEMO_GAME_STATE);
+  return () => {};
 }
 
-/**
- * Admin: start a round.
- */
-export async function startRound(roundId: string): Promise<void> {
-  await fetch("/api/game/state", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "start", roundId }),
-  });
-}
-
-/**
- * Admin: end a round.
- */
-export async function endRound(roundId: string): Promise<void> {
-  await fetch("/api/game/state", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "end", roundId }),
-  });
-}
-
-/**
- * Admin: update the HackerRank contest URL.
- */
-export async function updateHackerrankUrl(url: string): Promise<void> {
-  await fetch("/api/game/state", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "updateUrl", url }),
-  });
-}
+export async function startRound(_roundId: string): Promise<void> {}
+export async function endRound(_roundId: string): Promise<void> {}
+export async function updateHackerrankUrl(_url: string): Promise<void> {}
 
 // ─── Questions ────────────────────────────────────────────────────────────────
 
-/**
- * Fetches all questions for a round, ordered by `order` ascending.
- */
-export async function getRoundQuestions(roundId: string): Promise<Question[]> {
-  const res = await fetch(`/api/rounds/${roundId}/questions`);
-  if (!res.ok) return [];
-  return res.json();
+export async function getRoundQuestions(_roundId: string): Promise<Question[]> {
+  return [];
 }
 
 // ─── Scoring & Submissions ────────────────────────────────────────────────────
 
-/**
- * Score a single Round 1 question immediately — updates leaderboard live.
- * Uses localStorage per teamId to prevent double-counting on reload.
- */
 export async function scoreQuestion(
-  teamId: string,
-  questionId: string,
-  points: number,
-): Promise<void> {
-  const key = `pixtopia_r1_scored_${teamId}`;
-  let scored: string[] = [];
-  try {
-    scored = JSON.parse(localStorage.getItem(key) ?? "[]");
-  } catch {
-    /* ignore */
-  }
+  _teamId: string,
+  _questionId: string,
+  _points: number,
+): Promise<void> {}
 
-  if (scored.includes(questionId)) return; // already scored — skip
-
-  const res = await fetch(`/api/teams/${teamId}/score`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ points, questionId }),
-  });
-
-  if (res.ok) {
-    try {
-      localStorage.setItem(key, JSON.stringify([...scored, questionId]));
-    } catch {
-      /* ignore */
-    }
-  }
-}
-
-/**
- * Final Round 1 submit — saves answers + score metadata only.
- * Points are already incremented per-question via scoreQuestion.
- */
 export async function submitRound1Final(
-  teamId: string,
-  answers: Record<string, number>,
-  score: number,
-): Promise<void> {
-  await fetch(`/api/submissions/${teamId}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ roundId: "1", answers, score }),
-  });
-  try {
-    localStorage.removeItem(`pixtopia_r1_scored_${teamId}`);
-  } catch {
-    /* ignore */
-  }
-}
+  _teamId: string,
+  _answers: Record<string, number>,
+  _score: number,
+): Promise<void> {}
 
-/**
- * Generic submit for rounds 3 & 4 (also increments team points server-side).
- */
 export async function submitRound(
-  teamId: string,
-  roundId: string,
-  answers: Record<string, number | string>,
-  score: number,
-): Promise<void> {
-  await fetch(`/api/submissions/${teamId}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ roundId, answers, score }),
-  });
-}
+  _teamId: string,
+  _roundId: string,
+  _answers: Record<string, number | string>,
+  _score: number,
+): Promise<void> {}
 
-/**
- * Fetch a team's existing submission record.
- */
 export async function getTeamSubmission(
-  teamId: string,
+  _teamId: string,
 ): Promise<SubmissionData | null> {
-  const res = await fetch(`/api/submissions/${teamId}`);
-  if (!res.ok) return null;
-  return res.json();
+  return null;
 }
 
 // ─── Team ─────────────────────────────────────────────────────────────────────
 
-/**
- * Returns the team where leader_id matches the given user ID.
- */
 export async function getTeamByLeader(
-  leaderId: string,
+  _leaderId: string,
 ): Promise<TeamData | null> {
-  const res = await fetch(`/api/teams?leaderId=${leaderId}`);
-  if (!res.ok) return null;
-  const teams: TeamData[] = await res.json();
-  return teams[0] ?? null;
-}
-
-/**
- * Subscribes to real-time updates for a specific team row.
- * Calls callback with the updated TeamData whenever points (or any field) change.
- * Returns an unsubscribe function.
- */
-export function subscribeToTeam(
-  teamId: string,
-  callback: (team: TeamData) => void,
-): () => void {
-  const supabase = getClient();
-
-  const channel: RealtimeChannel = supabase
-    .channel(nextChannel(`team_${teamId}`))
-    .on(
-      "postgres_changes",
-      {
-        event: "UPDATE",
-        schema: "public",
-        table: "teams",
-        filter: `id=eq.${teamId}`,
-      },
-      (payload) => {
-        callback(payload.new as TeamData);
-      },
-    )
-    .subscribe();
-
-  return () => {
-    supabase.removeChannel(channel);
+  return {
+    id: "demo-team",
+    team_name: "Explorer",
+    points: 0,
+    leader_id: "demo-user-pixtopia-2026",
+    team_members_ids: [],
+    password: "",
   };
 }
 
-// ─── Leaderboard (real-time) ──────────────────────────────────────────────────
+export function subscribeToTeam(
+  _teamId: string,
+  _callback: (team: TeamData) => void,
+): () => void {
+  return () => {};
+}
 
-/**
- * Subscribes to real-time leaderboard updates.
- * Initial data is fetched immediately; subsequent updates trigger a re-fetch
- * because Supabase Realtime UPDATE payloads only contain the changed row.
- * Returns an unsubscribe function.
- */
+// ─── Leaderboard ──────────────────────────────────────────────────────────────
+
 export function subscribeToLeaderboard(
   callback: (data: { name: string; points: number }[]) => void,
 ): () => void {
-  const supabase = getClient();
-
-  const fetchAndEmit = async () => {
-    try {
-      const res = await fetch("/api/teams", { cache: "no-store" });
-      if (!res.ok) {
-        callback([]);
-        return;
-      }
-      const teams: TeamData[] = await res.json();
-      callback(teams.map((t) => ({ name: t.team_name, points: t.points })));
-    } catch {
-      callback([]);
-    }
-  };
-
-  // Fetch initial data
-  fetchAndEmit();
-
-  const channel: RealtimeChannel = supabase
-    .channel(nextChannel("leaderboard"))
-    .on(
-      "postgres_changes",
-      {
-        event: "UPDATE",
-        schema: "public",
-        table: "teams",
-      },
-      () => {
-        fetchAndEmit();
-      },
-    )
-    .subscribe();
-
-  return () => {
-    supabase.removeChannel(channel);
-  };
+  callback([
+    { name: "Explorer", points: 0 },
+  ]);
+  return () => {};
 }

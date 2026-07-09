@@ -12,7 +12,7 @@ const bebasNeue = Bebas_Neue({
 
 export const metadata: Metadata = {
   title: "Pixtopia — GDG Event",
-  description: "A Pixar-themed team competition event by GDG",
+  description: "A Pixar-themed team competition event by GDG on Campus RCOEM — featuring multi-round quizzes, puzzles, and creative challenges",
 };
 
 export default function RootLayout({
@@ -22,12 +22,6 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={bebasNeue.variable}>
-      <head>
-        {/* Pre-connect to Supabase — crossOrigin is required because auth
-            API calls are CORS requests; without it the connection can't be reused */}
-        <link rel="preconnect" href={process.env.NEXT_PUBLIC_SUPABASE_URL!} crossOrigin="anonymous" />
-        <link rel="dns-prefetch" href={process.env.NEXT_PUBLIC_SUPABASE_URL!} />
-      </head>
       <body className="antialiased">
         <AuthProvider>
           {children}
@@ -37,6 +31,3 @@ export default function RootLayout({
     </html>
   );
 }
-
-
-

@@ -1,62 +1,46 @@
 "use client";
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import type { User } from "@supabase/supabase-js";
-import { createClient } from "./supabase/client";
+import { createContext, useContext, ReactNode } from "react";
+
+/**
+ * Demo-mode AuthContext — no Supabase dependency.
+ * Provides a fake "demo" user so every page works without login.
+ * The login page is preserved for showcase but doesn't gate access.
+ */
+
+interface DemoUser {
+  id: string;
+  email: string;
+}
 
 interface AuthContextType {
-  user: User | null;
+  user: DemoUser | null;
   loading: boolean;
   isAdmin: boolean;
   logout: () => Promise<void>;
 }
 
+const DEMO_USER: DemoUser = {
+  id: "demo-user-pixtopia-2026",
+  email: "demo@pixtopia.dev",
+};
+
 const AuthContext = createContext<AuthContextType>({
-  user: null,
-  loading: true,
+  user: DEMO_USER,
+  loading: false,
   isAdmin: false,
   logout: async () => {},
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const isAdmin = user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL;
-
-  useEffect(() => {
-    const supabase = createClient();
-
-    // Get the initial session from local cookies/storage — NO network call.
-    // Using getSession() instead of getUser() is critical: getUser() makes a
-    // network request to Supabase Auth, and the Supabase client serializes
-    // all auth operations via Web Locks. On the login page, signInWithPassword()
-    // would be BLOCKED until getUser() finishes — and on first visit, with the
-    // 11 MB 3D model downloading, that call gets starved for bandwidth.
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    // Subscribe to auth state changes (login, logout, token refresh)
-    // @supabase/ssr handles session cookies automatically — no manual cookie management needed.
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const logout = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    // onAuthStateChange will fire and clear user state
-  };
-
   return (
-    <AuthContext.Provider value={{ user, loading, isAdmin, logout }}>
+    <AuthContext.Provider
+      value={{
+        user: DEMO_USER,
+        loading: false,
+        isAdmin: false,
+        logout: async () => {},
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

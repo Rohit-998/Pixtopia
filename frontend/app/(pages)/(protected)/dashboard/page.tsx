@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/authContext";
 import { useTeam } from "@/lib/useTeam";
 import {
-  subscribeToGameState, startRound, endRound,
+  subscribeToGameState,
   GameState, RoundStatus,
 } from "@/lib/database";
-import { RefreshCw, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import SiteNavbar from "@/app/Components/Navigation/DashboardNavbar";
 import svgPaths from "@/lib/cardSvgPaths";
 
@@ -28,29 +28,15 @@ const ROUNDS = [
   { id: "5", color: "#8c9530", textColor: "black", btnBg: "bg-black", btnText: "text-white" },
 ];
 
-function getRoundScore(submission: Record<string, unknown> | null, roundId: string) {
-  if (!submission) return null;
-  const r = submission[`round${roundId}`] as { score?: number } | undefined;
-  return r?.score ?? null;
-}
-
 export default function DashboardPage() {
-  const { user, isAdmin, loading: authLoading } = useAuth();
-  const { team, submission, loading: teamLoading } = useTeam();
+  const { user, loading: authLoading } = useAuth();
+  const { team, loading: teamLoading } = useTeam();
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [expandedRound, setExpandedRound] = useState<number | null>(null);
-  const [scraping, setScraping] = useState(false);
   const [cardScale, setCardScale] = useState(1);
   const cardWrapperRef = useRef<HTMLDivElement>(null);
-  const [scrapeResult, setScrapeResult] = useState<{
-    success?: boolean;
-    summary?: { totalTeams: number; matchedTeams: number; unmatchedTeams: number; totalPointsAdded: number };
-    error?: string;
-  } | null>(null);
-  // Per-round loading states for buttons
-  const [startingRound, setStartingRound] = useState<Record<string, boolean>>({});
-  const [endingRound, setEndingRound] = useState<Record<string, boolean>>({});
   const [navigating, setNavigating] = useState<Record<string, boolean>>({});
+  const [lockedDialog, setLockedDialog] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -63,9 +49,8 @@ export default function DashboardPage() {
     if (!cardWrapperRef.current) return;
     const wrapperRect = cardWrapperRef.current.getBoundingClientRect();
     const availableHeight = window.innerHeight - wrapperRect.top - 60;
-    const availableWidth = window.innerWidth - 40; // 20px padding each side
+    const availableWidth = window.innerWidth - 40;
     const cardHeight = 713;
-    // Max width: when one card is expanded = 4*236 + 1*422 + 4*11(gap) + 183(left overflow) + 113(right overflow)
     const maxCardWidth = 1706;
     const heightScale = availableHeight / cardHeight;
     const widthScale = availableWidth / maxCardWidth;
@@ -83,58 +68,14 @@ export default function DashboardPage() {
     return gameState?.round_statuses?.[id]?.status ?? "locked";
   };
 
-  const handleScrapeHackerrank = async () => {
-    if (scraping) return;
-    setScraping(true);
-    setScrapeResult(null);
-    try {
-      const res = await fetch("/api/scrape-hackerrank", { method: "POST" });
-      const data = await res.json();
-      if (res.ok) {
-        setScrapeResult({ success: true, summary: data.summary });
-      } else {
-        setScrapeResult({ success: false, error: data.error || "Failed to scrape scores" });
-      }
-    } catch {
-      setScrapeResult({ success: false, error: "Network error. Please try again." });
-    } finally {
-      setScraping(false);
-    }
-  };
-
   const handleEnterRound = (id: string) => {
+    // Only Round 1 is playable
+    if (id !== "1") {
+      setLockedDialog(id);
+      return;
+    }
     setNavigating((prev) => ({ ...prev, [id]: true }));
     router.push(`/dashboard/round/${id}`);
-  };
-
-  const handleStartRound = async (id: string) => {
-    if (startingRound[id]) return;
-    setStartingRound((prev) => ({ ...prev, [id]: true }));
-    try {
-      await startRound(id);
-    } finally {
-      setStartingRound((prev) => ({ ...prev, [id]: false }));
-    }
-  };
-
-  const handleEndRound = async (id: string) => {
-    if (endingRound[id]) return;
-    setEndingRound((prev) => ({ ...prev, [id]: true }));
-    try {
-      await endRound(id);
-    } finally {
-      setEndingRound((prev) => ({ ...prev, [id]: false }));
-    }
-  };
-
-  const handlePreviewRound = (id: string) => {
-    if (navigating[id]) return;
-    setNavigating((prev) => ({ ...prev, [id]: true }));
-    if (id === "4") {
-      router.push(`/dashboard/round/4/part1`);
-    } else {
-      router.push(`/dashboard/round/${id}`);
-    }
   };
 
   const toggleRound = (roundNumber: number) => {
@@ -146,9 +87,7 @@ export default function DashboardPage() {
     const round = ROUNDS[roundIdx];
     const roundNum = roundIdx + 1;
     const isExpanded = expandedRound === roundNum;
-    const status = getRoundStatus(round.id);
-    const roundScore = getRoundScore(submission as Record<string, unknown> | null, round.id);
-    const hasSubmitted = roundScore !== null && round.id !== "2" && round.id !== "5";
+    const isPlayable = round.id === "1";
 
     return (
       <div
@@ -311,83 +250,18 @@ export default function DashboardPage() {
               transform: 'translateY(-50%)',
             }}
           >
-            {/* Normal user: only "Start Now" */}
-            {!isAdmin && (
-              <button
-                disabled={status !== "active" || hasSubmitted || !!navigating[round.id]}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (navigating[round.id]) return;
-                  setNavigating((prev) => ({ ...prev, [round.id]: true }));
-                  if (round.id === "4") {
-                    router.push(`/dashboard/round/4/part1`);
-                  } else {
-                    handleEnterRound(round.id);
-                  }
-                }}
-                className={`${round.btnBg} ${round.btnText} px-8 py-3 rounded-full font-bold text-lg hover:bg-opacity-90 transition-all duration-300 disabled:opacity-50 hover:cursor-pointer disabled:cursor-not-allowed whitespace-nowrap flex items-center justify-center gap-2 min-w-[140px]`}
-              >
-                {navigating[round.id] ? (
-                  <><Loader2 size={18} className="animate-spin" /> LOADING...</>
-                ) : hasSubmitted ? "DONE" : status === "active" ? "START" : status === "completed" ? "ENDED" : "LOCKED"}
-              </button>
-            )}
-
-            {/* Admin: stacked buttons — Start, End, Preview */}
-            {isAdmin && (
-              <>
-                <button
-                  disabled={status === "active" || status === "completed" || !!startingRound[round.id]}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleStartRound(round.id);
-                  }}
-                  className={`${round.btnBg} ${round.btnText} px-8 py-3 rounded-full font-bold text-lg hover:bg-opacity-90 transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap min-w-[160px] flex items-center justify-center gap-2`}
-                >
-                  {startingRound[round.id] ? (
-                    <><Loader2 size={16} className="animate-spin" /> STARTING...</>
-                  ) : "START"}
-                </button>
-                <button
-                  disabled={status !== "active" || !!endingRound[round.id]}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleEndRound(round.id);
-                  }}
-                  className={`${round.btnBg} ${round.btnText} px-8 py-3 rounded-full font-bold text-lg hover:bg-opacity-90 transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap min-w-[160px] flex items-center justify-center gap-2`}
-                >
-                  {endingRound[round.id] ? (
-                    <><Loader2 size={16} className="animate-spin" /> ENDING...</>
-                  ) : "END ROUND"}
-                </button>
-                <button
-                  disabled={!!navigating[round.id]}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handlePreviewRound(round.id);
-                  }}
-                  className={`${round.btnBg} ${round.btnText} px-8 py-3 rounded-full font-bold text-lg hover:bg-opacity-90 transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap min-w-[160px] flex items-center justify-center gap-2`}
-                >
-                  {navigating[round.id] ? (
-                    <><Loader2 size={16} className="animate-spin" /> LOADING...</>
-                  ) : "PREVIEW"}
-                </button>
-                {/* Scrape HackerRank for Round 2 */}
-                {round.id === "2" && (
-                  <button
-                    disabled={scraping}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleScrapeHackerrank();
-                    }}
-                    className={`${round.btnBg} ${round.btnText} px-6 py-3 rounded-full font-bold text-lg hover:bg-opacity-90 transition-all duration-300 whitespace-nowrap min-w-[160px] flex items-center justify-center gap-2`}
-                  >
-                    <RefreshCw size={14} className={scraping ? "animate-spin" : ""} />
-                    {scraping ? "SCRAPING" : "SCRAPE HR"}
-                  </button>
-                )}
-              </>
-            )}
+            <button
+              disabled={!!navigating[round.id]}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEnterRound(round.id);
+              }}
+              className={`${round.btnBg} ${round.btnText} px-8 py-3 rounded-full font-bold text-lg hover:bg-opacity-90 transition-all duration-300 disabled:opacity-50 hover:cursor-pointer disabled:cursor-not-allowed whitespace-nowrap flex items-center justify-center gap-2 min-w-[140px]`}
+            >
+              {navigating[round.id] ? (
+                <><Loader2 size={18} className="animate-spin" /> LOADING...</>
+              ) : isPlayable ? "PLAY" : "LOCKED"}
+            </button>
           </div>
         )}
 
@@ -439,9 +313,6 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
-
-
-
       </div>
     );
   };
@@ -458,13 +329,8 @@ export default function DashboardPage() {
               className="text-[2rem] md:text-[2.8rem] font-bold uppercase tracking-[0.15em] text-white leading-none"
               style={{ letterSpacing: '0.15em' }}
             >
-              {team?.team_name ?? user?.email?.split("@")[0] ?? "Team"}
+              {team?.team_name ?? "Explorer"}
             </h1>
-            {isAdmin && (
-              <span className="text-[10px] uppercase tracking-widest text-zinc-500 border border-zinc-700 px-3 py-1 rounded-full">
-                Admin
-              </span>
-            )}
           </div>
           <div className="text-right">
             <span className="text-[25px] uppercase  text-zinc-400 block">Score</span>
@@ -484,30 +350,6 @@ export default function DashboardPage() {
 
         {/* ─── Card Rounds ─── */}
         <div className="w-full px-5 py-10">
-          {/* Scrape result toast */}
-          {scrapeResult && (
-            <div
-              className={`mb-6 rounded-xl px-4 py-3 text-sm border backdrop-blur-sm ${
-                scrapeResult.success
-                  ? "bg-green-500/10 border-green-500/30 text-green-300"
-                  : "bg-red-500/10 border-red-500/30 text-red-300"
-              }`}
-            >
-              {scrapeResult.success && scrapeResult.summary ? (
-                <div className="space-y-1">
-                  <p className="font-semibold">✅ Scores imported successfully!</p>
-                  <p>Teams matched: {scrapeResult.summary.matchedTeams}/{scrapeResult.summary.totalTeams}</p>
-                  <p>Total points added: <span className="text-yellow-400 font-bold">{scrapeResult.summary.totalPointsAdded}</span></p>
-                  {scrapeResult.summary.unmatchedTeams > 0 && (
-                    <p className="text-amber-400">⚠ {scrapeResult.summary.unmatchedTeams} team(s) had no matching HackerRank username</p>
-                  )}
-                </div>
-              ) : (
-                <p>❌ {scrapeResult.error}</p>
-              )}
-            </div>
-          )}
-
           <div ref={cardWrapperRef} className="flex justify-center overflow-visible" style={{ height: `${713 * cardScale + 20}px` }}>
             <div
               className="flex gap-[11px] items-start justify-center"
@@ -520,9 +362,33 @@ export default function DashboardPage() {
               {ROUNDS.map((_, idx) => renderRoundCard(idx))}
             </div>
           </div>
-
         </div>
       </div>
+
+      {/* ─── Locked Round Dialog ─── */}
+      {lockedDialog && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-zinc-950 border border-zinc-700 rounded-2xl px-8 py-8 max-w-md w-[90vw] text-center space-y-4">
+            <div className="w-16 h-16 mx-auto rounded-full bg-zinc-800 flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400">
+                <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+            </div>
+            <h2 className="text-xl font-bold tracking-wide text-white">ROUND {lockedDialog} UNAVAILABLE</h2>
+            <p className="text-zinc-400 text-sm leading-relaxed">
+              This round was part of our live GDG on Campus RCOEM event and is no longer available.
+              Try <span className="text-white font-medium">Round 1</span> — a Pixar-themed logic & math quiz!
+            </p>
+            <button
+              onClick={() => setLockedDialog(null)}
+              className="mt-2 px-6 py-2.5 bg-white text-black rounded-lg font-bold text-sm tracking-wide hover:bg-zinc-200 transition-colors"
+            >
+              GOT IT
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ─── Keyframe animation for fadeIn ─── */}
       <style jsx>{`

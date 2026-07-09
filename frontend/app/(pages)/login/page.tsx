@@ -6,7 +6,7 @@ import { useGLTF, Environment, ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+// Supabase removed — demo mode
 
 /* ─── Slow tick — manually invalidates at ~20fps for demand-mode Canvas ── */
 function SlowTick() {
@@ -270,7 +270,7 @@ export default function LoginPage() {
   );
   const carRef = useRef<THREE.Group>(null);
   const [modelLoaded, setModelLoaded] = useState(false);
-  const [supabaseReady, setSupabaseReady] = useState(false);
+  const [supabaseReady] = useState(true); // Always ready — no Supabase
 
   // Auth state
   const [email, setEmail] = useState("");
@@ -288,19 +288,8 @@ export default function LoginPage() {
     setModelLoaded(true);
   }, []);
 
-  // STEP 1: Warm up Supabase connection with a REAL network request BEFORE
-  // loading the 11 MB 3D model. getSession() is local-only (reads memory) and
-  // doesn't establish any network connection. We need an actual HTTP request
-  // to force DNS + TCP + TLS handshake so signInWithPassword() is instant later.
+  // Prefetch the dashboard page
   useEffect(() => {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-
-    // Lightweight GET that forces the full connection setup
-    fetch(`${supabaseUrl}/auth/v1/settings`, { mode: "cors" })
-      .catch(() => {}) // ignore errors — we just want the connection warm
-      .finally(() => setSupabaseReady(true));
-
-    // Also prefetch the dashboard page
     router.prefetch("/dashboard");
   }, []);
 
@@ -326,44 +315,9 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
     setLoading(true);
-    try {
-      const supabase = createClient();
-
-      // For admin: bootstrap the account in parallel (don't block sign-in)
-      const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
-      if (adminEmail && email === adminEmail) {
-        // Fire-and-forget — don't await. The account almost certainly
-        // exists already; this is just a safety net for first-ever login.
-        fetch("/api/auth/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-        }).catch(() => {});
-      }
-
-      // Direct client-side sign-in — no Docker round-trip
-      const { error: authErr } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (authErr) {
-        setError(authErr.message);
-        setLoading(false);
-        return;
-      }
-
-      // Full page navigation (not client-side) so the request goes through
-      // proxy.ts → updateSession() → cookies are properly synced to the server.
-      // router.replace() is client-side only and skips the proxy entirely.
-      window.location.href = "/dashboard";
-      // Intentionally not setting loading to false so the UI stays in loading state during transition
-    } catch {
-      setError("Failed to connect. Please try again.");
-      setLoading(false);
-    }
+    // Demo mode — just navigate to dashboard
+    router.push("/dashboard");
   };
 
   return (
@@ -500,63 +454,29 @@ export default function LoginPage() {
               <div className="bg-[rgba(0,0,0,0.55)] border border-solid border-white rounded-[20px] md:rounded-[27px] w-full max-w-[555px] p-6 sm:p-8 md:p-12 backdrop-blur-sm">
                 {/* Title */}
                 <h1
-                  className="text-[20px] sm:text-[28px] md:text-[36px] text-center text-white tracking-[0.1em] leading-tight mb-6 md:mb-8 font-medium"
+                  className="text-[20px] sm:text-[28px] md:text-[36px] text-center text-white tracking-[0.1em] leading-tight mb-4 md:mb-6 font-medium"
                 >
-                  Authenticate to &ldquo;Enter the World&rdquo;
+                  Enter the World of Pixtopia
                 </h1>
+                <p className="text-zinc-400 text-center text-sm sm:text-base mb-6 md:mb-8 leading-relaxed">
+                  A Pixar-themed quiz event by <span className="text-white font-medium">GDG on Campus RCOEM</span>.
+                  Experience Round 1 — a logic &amp; math challenge featuring your favorite Pixar characters!
+                </p>
 
-                <form onSubmit={handleLogin} className="flex flex-col gap-0">
-                  {error && (
-                    <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-300 text-sm text-center">
-                      {error}
-                    </div>
-                  )}
-
-                  {/* Email Input */}
-                  <div className="mb-4 md:mb-6">
-                    <label
-                      className="text-[14px] sm:text-[18px] md:text-[24px] text-white tracking-[0.1em] block mb-2 font-medium"
-                    >
-                      Enter Leader&apos;s Email:
-                    </label>
-                    <input
-                      id="email"
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                      placeholder="leader@example.com"
-                      className="w-full backdrop-blur-sm bg-[rgba(255,255,255,0.06)] border border-solid border-white rounded-[8px] h-[45px] md:h-[56px] px-4 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50"
-                    />
-                  </div>
-
-                  {/* Password Input */}
-                  <div className="mb-6 md:mb-8">
-                    <label
-                      className="text-[14px] sm:text-[18px] md:text-[24px] text-white tracking-[0.1em] block mb-2 font-medium"
-                    >
-                      Password:
-                    </label>
-                    <input
-                      id="password"
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      placeholder="••••••••"
-                      className="w-full backdrop-blur-sm bg-[rgba(255,255,255,0.06)] border border-solid border-white rounded-[8px] h-[45px] md:h-[56px] px-4 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50"
-                    />
-                  </div>
-
-                  {/* Submit Button */}
+                <form onSubmit={handleLogin} className="flex flex-col gap-4">
+                  {/* Demo Enter Button */}
                   <button
                     type="submit"
                     id="login-btn"
                     disabled={loading}
-                    className="w-full bg-white border border-solid border-white rounded-[8px] h-[45px] md:h-[51px] text-[16px] sm:text-[20px] md:text-[24px] text-black tracking-[0.1em] hover:bg-gray-100 transition-colors disabled:opacity-50 font-medium"
+                    className="w-full bg-white border border-solid border-white rounded-[8px] h-[45px] md:h-[51px] text-[16px] sm:text-[20px] md:text-[24px] text-black tracking-[0.15em] hover:bg-gray-100 transition-colors disabled:opacity-50 font-medium"
                   >
-                    {loading ? "Signing in…" : "Submit"}
+                    {loading ? "Entering…" : "ENTER PIXTOPIA"}
                   </button>
+
+                  <p className="text-zinc-500 text-center text-[11px] tracking-widest uppercase mt-2">
+                    No login required — explore freely
+                  </p>
                 </form>
               </div>
             </motion.div>
